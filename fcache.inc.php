@@ -1,6 +1,18 @@
 <?php
 /**
   * PHP File Cache, Used to instead of memcache in Host which can not install memcache.
+  * 优点
+  * 1.将每一个变量单独存放一个文件，可以有效减少磁盘读写数据，大大加快缓存存取速度；
+  * 2.尽量减少对键值和缓存数据的计算，增加缓存过程的效率；
+  *
+  * 缺点
+  * 1.弊端就是会产生很多的缓存文件。
+  * 
+  * 目前git上很大一部分缓存是写到一个缓存文件，意味着：
+  * 1.无论你是读取多大的数据，都需要从磁盘读出整个文件到内存，然后解析，获取你要的部分数据；
+  * 2.在缓存数据很大的时候，并不能起到缓存加速网站访问的目的，同时增加磁盘的读写负荷；
+  * 3.在某一个临界点，可能会导致缓存性能比数据库还差；
+  * 4.未经过严格测试，个人预估一般网站的数据都会达到100M以上，如果每次访问需要读取100M的数据，然后解析，性能非常低效。
   * @author: hustcc
   * @contract: http://50vip.com/
   * @data 2014-11-21
@@ -11,12 +23,12 @@ class FCache {
     //Length of time to cache a file, default 1 day (in seconds)
     public $cache_time = 86400;
     //Cache file extension
-    public $cache_extension = '.atool';
+    public $cache_extension = '.cache';
     
     /**
      * 构造函数
      */
-    public function __construct($cache_path = 'cache/', $cache_time = 86400, $cache_exttension = '.atool') {
+    public function __construct($cache_path = 'cache/', $cache_time = 86400, $cache_exttension = '.cache') {
         $this->cache_path = $cache_path;
         $this->cache_time = $cache_time;
         $this->cache_exttension = $cache_exttension;
@@ -25,13 +37,14 @@ class FCache {
         }
     }
     
+    //增加一对缓存数据
     public function add($key, $value) {
         $filename = $this->_get_cache_file($key);
-        //写文件，TODO 文件锁
-        file_put_contents($filename, serialize($value));
+        //写文件, 文件锁避免出错
+        file_put_contents($filename, serialize($value), LOCK_EX);
     }
     
-    //删除文件即可
+    //删除对应的一个缓存
     public function delete($key) {
         $filename = $this->_get_cache_file($key);
         unlink($filename);
@@ -49,7 +62,7 @@ class FCache {
         }
     }
     
-    //删除所有的cache文件
+    //删除所有缓存
     public function flush() {
         $fp = opendir($this->cache_path);
         while(!false == ($fn = readdir($fp))) {
@@ -69,6 +82,7 @@ class FCache {
         return false;
     }
     
+    //验证cache key是否合法，可以自行增加规则
     private function _is_valid_key($key) {
         if ($key != null) {
             return true;
@@ -76,40 +90,18 @@ class FCache {
         return false;
     }
     
+    //私有方法
     private function _safe_filename($key) {
         if ($this->_is_valid_key($key)) {
-            //not support chinese
-            //return preg_replace('/[^0-9a-z\.\_\-]/i','', strtolower($key));
             return md5($key);
         }
-        return '0eb3be2db3a534c192be5570c6c42f59atool.org';//key不合法的时候，同时缓存到该文件，md5('atool.org').'atool.org';
-        
+        //key不合法的时候，均使用默认文件'unvalid_cache_key'，不使用抛出异常，简化使用，增强容错性
+        return 'unvalid_cache_key';
     }
     
+    //拼接缓存路径
     private function _get_cache_file($key) {
         return $this->cache_path . $this->_safe_filename($key) . $this->cache_extension;
     }
 }
-
-/*
-//example
-$cache = new FCache();
-$storeData = $cache->get('select * from table;');
-if (!$storeData) {
-    $storeData = array(
-      'time'   => time(),
-      'str' => 'test',
-      'int'   => 1321
-    );
-    $cache->add('select * from table;', $storeData);
-}
-print_r($storeData);
-
-$cache->delete('select * from table;');
-
-$cache->add('select * from table1;', 123);
-$cache->add('select * from table2;', 234);
-$cache->add('select * from table3;', 345);
-$cache->flush();
-*/
 ?>
